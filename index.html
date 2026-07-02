@@ -179,6 +179,24 @@ body{background:var(--bg);color:var(--white);font-family:var(--sans);min-height:
 .btn-dl{display:block;width:100%;padding:12px;background:transparent;border:1px solid #2a2a2a;border-radius:4px;color:var(--white);font-family:var(--mono);font-size:10px;cursor:pointer;text-transform:uppercase;letter-spacing:.08em;text-align:center;transition:all .2s;margin-bottom:8px}
 .btn-dl:hover{border-color:var(--accent);color:var(--accent)}
 .btn-import-confirm{display:block;width:100%;padding:12px;background:var(--accent);border:none;border-radius:4px;color:#0C0C0C;font-family:var(--mono);font-size:10px;font-weight:700;cursor:pointer;text-transform:uppercase;letter-spacing:.08em;margin-top:10px;display:none}
+
+/* ── FILTER BAR ── */
+.filter-bar{padding:14px 16px 0;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.filter-period{display:flex;gap:4px;background:#111;border-radius:4px;padding:3px;flex:1}
+.fchip{flex:1;padding:7px 4px;background:none;border:none;color:var(--muted);font-family:var(--mono);font-size:9px;letter-spacing:.06em;text-transform:uppercase;cursor:pointer;border-radius:3px;transition:all .15s;text-align:center;white-space:nowrap}
+.fchip.active{background:var(--surface2);color:var(--accent)}
+.filter-range{display:flex;gap:4px;align-items:center}
+.fselect{background:#111;border:1px solid #222;border-radius:3px;color:var(--muted);font-family:var(--mono);font-size:9px;padding:6px 8px;outline:none;cursor:pointer;-webkit-appearance:none;appearance:none}
+.fselect:focus{border-color:var(--accent);color:var(--white)}
+.filter-label{font-size:8px;font-family:var(--mono);color:var(--muted);letter-spacing:.1em;text-transform:uppercase;padding:0 4px}
+.filter-summary{padding:6px 16px 0;font-size:9px;font-family:var(--mono);color:var(--muted);letter-spacing:.06em}
+.filter-summary span{color:var(--accent)}
+
+/* ── EMPTY STATE ── */
+.empty-state{background:var(--surface);border-radius:4px;padding:32px 16px;text-align:center;margin-top:0}
+.empty-icon{font-size:28px;margin-bottom:10px}
+.empty-title{font-size:13px;font-family:var(--mono);color:var(--white);margin-bottom:4px}
+.empty-sub{font-size:11px;color:var(--muted);font-family:var(--mono)}
 </style>
 </head>
 <body>
@@ -195,6 +213,20 @@ body{background:var(--bg);color:var(--white);font-family:var(--sans);min-height:
   </div>
 </div>
 <div class="track"></div>
+
+<!-- FILTER BAR -->
+<div class="filter-bar">
+  <div class="filter-period">
+    <button class="fchip active" onclick="setFilter('all')">Todo</button>
+    <button class="fchip" onclick="setFilter('month')">Mes</button>
+    <button class="fchip" onclick="setFilter('semester')">Semestre</button>
+    <button class="fchip" onclick="setFilter('year')">Año</button>
+  </div>
+  <div class="filter-range" id="filter-range" style="display:none">
+    <select class="fselect" id="filter-select" onchange="render()"></select>
+  </div>
+</div>
+<div class="filter-summary" id="filter-summary"></div>
 
 <!-- STAT BAR -->
 <div class="stat-bar">
@@ -216,6 +248,7 @@ body{background:var(--bg);color:var(--white);font-family:var(--sans);min-height:
 </div>
 <div class="track"></div>
 
+<div id="main-content">
 <!-- CHARTS: KM -->
 <div class="sec">
   <div class="sec-title">Distancia por sesión (km)</div>
@@ -235,7 +268,7 @@ body{background:var(--bg);color:var(--white);font-family:var(--sans);min-height:
 </div>
 
 <!-- CHARTS: CADENCIA -->
-<div class="sec" style="margin-top:14px" id="sec-cadence" style="display:none">
+<div class="sec" style="margin-top:14px;display:none" id="sec-cadence">
   <div class="sec-title">Cadencia (pasos/min)</div>
   <div class="chart-card">
     <div class="bars" id="ch-cad"></div>
@@ -248,7 +281,6 @@ body{background:var(--bg);color:var(--white);font-family:var(--sans);min-height:
     </div>
     <div class="zone-name" id="zone-name"></div>
   </div>
-  <!-- SVG cadencia multi-sesión -->
   <div class="chart-card" style="margin-top:8px" id="cad-trend-wrap">
     <div class="sec-title" style="margin-bottom:8px">Tendencia de cadencia</div>
     <svg class="chart-svg" id="ch-cad-line" viewBox="0 0 300 70" preserveAspectRatio="none"></svg>
@@ -257,7 +289,7 @@ body{background:var(--bg);color:var(--white);font-family:var(--sans);min-height:
 </div>
 
 <!-- CHARTS: SPLITS COMPARATIVO -->
-<div class="sec" style="margin-top:14px" id="sec-splits">
+<div class="sec" style="margin-top:14px;display:none" id="sec-splits">
   <div class="sec-title">Splits comparativos</div>
   <div class="chart-card" id="splits-compare-wrap">
     <div id="splits-compare"></div>
@@ -275,6 +307,7 @@ body{background:var(--bg);color:var(--white);font-family:var(--sans);min-height:
   <div class="sec-title">Insights</div>
   <div class="ins-grid" id="insights"></div>
 </div>
+</div><!-- /main-content -->
 
 <!-- BOTTOM ACTIONS -->
 <div class="bottom-actions">
@@ -417,6 +450,75 @@ function showSaveToast(){
 
 let runs = loadRuns();
 let editIdx = null, splitsData = [], pendingImport = null, activeTab = 'gen';
+let activeFilter = 'all'; // 'all' | 'month' | 'semester' | 'year'
+
+// ── FILTER LOGIC ──────────────────────────────────
+function setFilter(f){
+  activeFilter = f;
+  document.querySelectorAll('.fchip').forEach((el,i)=>{
+    el.classList.toggle('active', ['all','month','semester','year'][i]===f);
+  });
+  const rangeEl = document.getElementById('filter-range');
+  if(f==='all'){ rangeEl.style.display='none'; render(); return; }
+  rangeEl.style.display='flex';
+  populateFilterSelect(f);
+  render();
+}
+
+function populateFilterSelect(f){
+  const sel = document.getElementById('filter-select');
+  const current = sel.value;
+  const allSorted = [...runs].sort((a,b)=>b.date.localeCompare(a.date));
+  const opts = new Set();
+
+  allSorted.forEach(r=>{
+    const [y,m] = r.date.split('-');
+    if(f==='month') opts.add(`${y}-${m}`);
+    else if(f==='semester'){
+      const sem = parseInt(m)<=6 ? '1' : '2';
+      opts.add(`${y}-S${sem}`);
+    } else if(f==='year') opts.add(y);
+  });
+
+  const arr = [...opts];
+  sel.innerHTML = arr.map(v=>{
+    const lbl = f==='month' ? fmtMonth(v) : f==='semester' ? fmtSem(v) : v;
+    return `<option value="${v}">${lbl}</option>`;
+  }).join('');
+  if(arr.includes(current)) sel.value = current;
+}
+
+function fmtMonth(ym){
+  const [y,m] = ym.split('-');
+  const names=['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  return `${names[parseInt(m)-1]} ${y}`;
+}
+function fmtSem(ys){ const [y,s]=ys.split('-'); return `${s} ${y}`; }
+
+function filteredRuns(){
+  if(activeFilter==='all') return runs;
+  const val = document.getElementById('filter-select').value;
+  if(!val) return runs;
+  return runs.filter(r=>{
+    const [y,m] = r.date.split('-');
+    if(activeFilter==='month') return `${y}-${m}`===val;
+    if(activeFilter==='semester'){
+      const sem = parseInt(m)<=6?'1':'2';
+      return `${y}-S${sem}`===val;
+    }
+    if(activeFilter==='year') return y===val;
+    return true;
+  });
+}
+
+function updateFilterSummary(subset){
+  const el = document.getElementById('filter-summary');
+  if(activeFilter==='all'||!subset.length){ el.textContent=''; return; }
+  const sel = document.getElementById('filter-select');
+  const lbl = sel.options[sel.selectedIndex]?.text || '';
+  const km = subset.reduce((a,r)=>a+r.km,0).toFixed(2);
+  el.innerHTML = `<span>${lbl}</span> · ${subset.length} sesión${subset.length!==1?'es':''} · <span>${km} km</span>`;
+}
 
 // ═══════════════════════════════════════════════
 // UTILS
@@ -426,7 +528,7 @@ const s2p = s => { const m=Math.floor(s/60),r=s%60; return `${m}'${String(r).pad
 const fmtTime = s => { const h=Math.floor(s/3600),m=Math.floor((s%3600)/60),r=s%60; return h?`${h}h ${String(m).padStart(2,'0')}:${String(r).padStart(2,'0')}`:`${m}:${String(r).padStart(2,'0')}` };
 const sd = d => { const [,m,day]=d.split('-'); return `${day}/${m}` };
 const dn = d => ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'][new Date(d+'T12:00:00').getDay()];
-const sorted = () => [...runs].sort((a,b)=>a.date.localeCompare(b.date));
+const sorted = () => [...filteredRuns()].sort((a,b)=>a.date.localeCompare(b.date));
 
 function cadZone(spm){
   if(!spm) return null;
@@ -472,6 +574,30 @@ function svgLine(vals, W, H, pad, color, invert, showLabels, labelFn){
 // ═══════════════════════════════════════════════
 function render(){
   const s = sorted();
+  updateFilterSummary(s);
+
+  // Empty state
+  const mc = document.getElementById('main-content');
+  const emptyId = 'empty-state-block';
+  document.getElementById(emptyId)?.remove();
+  if(!s.length){
+    mc.style.display='none';
+    const emp = document.createElement('div');
+    emp.id = emptyId;
+    emp.className = 'sec';
+    emp.innerHTML = `<div class="empty-state">
+      <div class="empty-icon">🏃</div>
+      <div class="empty-title">Sin sesiones en este periodo</div>
+      <div class="empty-sub">Prueba con otro filtro o registra una nueva sesión</div>
+    </div>`;
+    mc.parentNode.insertBefore(emp, mc.nextSibling);
+    ['s-km','s-pace','s-cad'].forEach(id=>document.getElementById(id).textContent='—');
+    document.getElementById('s-runs').textContent='0 sesiones';
+    document.getElementById('s-pace-d').textContent='—';
+    document.getElementById('s-cad-sub').textContent='spm';
+    return;
+  }
+  mc.style.display='block';
 
   // Header
   document.getElementById('hdr-date').innerHTML =
@@ -479,13 +605,13 @@ function render(){
     new Date().getFullYear();
 
   // Stats
-  const totKm = runs.reduce((a,r)=>a+r.km,0);
+  const totKm = s.reduce((a,r)=>a+r.km,0);
   document.getElementById('s-km').textContent = totKm.toFixed(2);
-  document.getElementById('s-runs').textContent = `${runs.length} sesión${runs.length!==1?'es':''}`;
-  const bestR = [...runs].sort((a,b)=>p2s(a.paceMin,a.paceSec)-p2s(b.paceMin,b.paceSec))[0];
+  document.getElementById('s-runs').textContent = `${s.length} sesión${s.length!==1?'es':''}`;
+  const bestR = [...s].sort((a,b)=>p2s(a.paceMin,a.paceSec)-p2s(b.paceMin,b.paceSec))[0];
   document.getElementById('s-pace').textContent = s2p(p2s(bestR.paceMin,bestR.paceSec));
   document.getElementById('s-pace-d').textContent = sd(bestR.date)+' · '+dn(bestR.date);
-  const cadRuns = runs.filter(r=>r.cadence);
+  const cadRuns = s.filter(r=>r.cadence);
   if(cadRuns.length){
     const avg = Math.round(cadRuns.reduce((a,r)=>a+r.cadence,0)/cadRuns.length);
     document.getElementById('s-cad').textContent = avg;
@@ -498,7 +624,7 @@ function render(){
   // KM bars
   const maxKm = Math.max(...s.map(r=>r.km));
   document.getElementById('ch-km').innerHTML = s.map(r=>{
-    const pct = (r.km/maxKm*100).toFixed(1);
+    const pct = Math.max(6, (r.km / maxKm * 100)).toFixed(1);
     return `<div class="bar-g">
       <div class="bar-v accent">${r.km}</div>
       <div class="bar km-bar" style="height:${pct}%"></div>
@@ -522,8 +648,8 @@ function render(){
       return `<div class="bar-g"><div class="bar-v blue">${r.cadence}</div><div class="bar cad-bar" style="height:${pct}%"></div><div class="bar-lbl">${sd(r.date)}<br>${dn(r.date)}</div></div>`;
     }).join('');
 
-    // Zone indicator (last run with cadence)
-    const lastCad = [...runs].filter(r=>r.cadence).sort((a,b)=>a.date.localeCompare(b.date)).pop();
+    // Zone indicator (last run with cadence in filtered set)
+    const lastCad = [...s].filter(r=>r.cadence).sort((a,b)=>a.date.localeCompare(b.date)).pop();
     if(lastCad){
       const z = cadZone(lastCad.cadence);
       document.getElementById('zone-needle').style.left = z.pct+'%';
@@ -588,10 +714,10 @@ function render(){
   }
 
   // Runs list
-  const worstR = [...runs].sort((a,b)=>p2s(b.paceMin,b.paceSec)-p2s(a.paceMin,a.paceSec))[0];
+  const worstR = [...s].sort((a,b)=>p2s(b.paceMin,b.paceSec)-p2s(a.paceMin,a.paceSec))[0];
   document.getElementById('runs-list').innerHTML = [...s].reverse().map(r=>{
     const ri = runs.indexOf(r);
-    const cls = r.date===bestR.date?'best':(r.date===worstR.date&&runs.length>1?'slow':'');
+    const cls = r.date===bestR.date?'best':(r.date===worstR.date&&s.length>1?'slow':'');
     const badge = cls==='best'?`<span class="ttag tup">↑ mejor ritmo</span>`:cls==='slow'?`<span class="ttag tdn">↓ más lento</span>`:'';
     const cadHtml = r.cadence?`<div class="rmet cad"><div class="rmet-v">${r.cadence}</div><div class="rmet-l">spm</div></div>`:'';
     const hasSpl = r.splits&&r.splits.length>0;
